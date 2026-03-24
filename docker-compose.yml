@@ -1,0 +1,291 @@
+version: '3.8'
+
+services:
+  # PostgreSQL 데이터베이스
+  postgres:
+    image: postgres:15-alpine
+    container_name: audit_db
+    environment:
+      POSTGRES_USER: audit_user
+      POSTGRES_PASSWORD: audit_pass
+      POSTGRES_DB: audit_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U audit_user -d audit_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - audit_network
+
+  # 중앙 서버
+  central-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.central
+    container_name: audit_central
+    environment:
+      DATABASE_URL: postgresql://audit_user:audit_pass@postgres:5432/audit_db
+      LOG_LEVEL: info
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./central_server:/app/central_server
+      - ./db_models:/app/db_models
+      - ./:/app/shared
+    networks:
+      - audit_network
+    command: python central_server/main.py
+
+  # 워커 서버 1
+  worker-1:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: audit_worker_1
+    environment:
+      DATABASE_URL: postgresql://audit_user:audit_pass@postgres:5432/audit_db
+      CENTRAL_SERVER_URL: http://central-server:8000
+      WORKER_ID: worker-001
+    ports:
+      - "8001:8001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      central-server:
+        condition: service_started
+    volumes:
+      - ./worker_server:/app/worker_server
+      - ./db_models:/app/db_models
+    networks:
+      - audit_network
+    command: python worker_server/main.py
+
+  # 워커 서버 2
+  worker-2:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: audit_worker_2
+    environment:
+      DATABASE_URL: postgresql://audit_user:audit_pass@postgres:5432/audit_db
+      CENTRAL_SERVER_URL: http://central-server:8000
+      WORKER_ID: worker-002
+    ports:
+      - "8002:8001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      central-server:
+        condition: service_started
+    volumes:
+      - ./worker_server:/app/worker_server
+      - ./db_models:/app/db_models
+    networks:
+      - audit_network
+    command: python worker_server/main.py
+
+  # 워커 서버 3
+  worker-3:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: audit_worker_3
+    environment:
+      DATABASE_URL: postgresql://audit_user:audit_pass@postgres:5432/audit_db
+      CENTRAL_SERVER_URL: http://central-server:8000
+      WORKER_ID: worker-003
+    ports:
+      - "8003:8001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      central-server:
+        condition: service_started
+    volumes:
+      - ./worker_server:/app/worker_server
+      - ./db_models:/app/db_models
+    networks:
+      - audit_network
+    command: python worker_server/main.py
+
+  # 워커 서버 4
+  worker-4:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: audit_worker_4
+    environment:
+      DATABASE_URL: postgresql://audit_user:audit_pass@postgres:5432/audit_db
+      CENTRAL_SERVER_URL: http://central-server:8000
+      WORKER_ID: worker-004
+    ports:
+      - "8004:8001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      central-server:
+        condition: service_started
+    volumes:
+      - ./worker_server:/app/worker_server
+      - ./db_models:/app/db_models
+    networks:
+      - audit_network
+    command: python worker_server/main.py
+
+  # 워커 서버 5
+  worker-5:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: audit_worker_5
+    environment:
+      DATABASE_URL: postgresql://audit_user:audit_pass@postgres:5432/audit_db
+      CENTRAL_SERVER_URL: http://central-server:8000
+      WORKER_ID: worker-005
+    ports:
+      - "8005:8001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      central-server:
+        condition: service_started
+    volumes:
+      - ./worker_server:/app/worker_server
+      - ./db_models:/app/db_models
+    networks:
+      - audit_network
+    command: python worker_server/main.py
+
+  # 워커 서버 6
+  worker-6:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: audit_worker_6
+    environment:
+      DATABASE_URL: postgresql://audit_user:audit_pass@postgres:5432/audit_db
+      CENTRAL_SERVER_URL: http://central-server:8000
+      WORKER_ID: worker-006
+    ports:
+      - "8006:8001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      central-server:
+        condition: service_started
+    volumes:
+      - ./worker_server:/app/worker_server
+      - ./db_models:/app/db_models
+    networks:
+      - audit_network
+    command: python worker_server/main.py
+
+  # 워커 서버 7
+  worker-7:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: audit_worker_7
+    environment:
+      DATABASE_URL: postgresql://audit_user:audit_pass@postgres:5432/audit_db
+      CENTRAL_SERVER_URL: http://central-server:8000
+      WORKER_ID: worker-007
+    ports:
+      - "8007:8001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      central-server:
+        condition: service_started
+    volumes:
+      - ./worker_server:/app/worker_server
+      - ./db_models:/app/db_models
+    networks:
+      - audit_network
+    command: python worker_server/main.py
+
+  # 워커 서버 8
+  worker-8:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: audit_worker_8
+    environment:
+      DATABASE_URL: postgresql://audit_user:audit_pass@postgres:5432/audit_db
+      CENTRAL_SERVER_URL: http://central-server:8000
+      WORKER_ID: worker-008
+    ports:
+      - "8008:8001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      central-server:
+        condition: service_started
+    volumes:
+      - ./worker_server:/app/worker_server
+      - ./db_models:/app/db_models
+    networks:
+      - audit_network
+    command: python worker_server/main.py
+
+  # 워커 서버 9
+  worker-9:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: audit_worker_9
+    environment:
+      DATABASE_URL: postgresql://audit_user:audit_pass@postgres:5432/audit_db
+      CENTRAL_SERVER_URL: http://central-server:8000
+      WORKER_ID: worker-009
+    ports:
+      - "8009:8001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      central-server:
+        condition: service_started
+    volumes:
+      - ./worker_server:/app/worker_server
+      - ./db_models:/app/db_models
+    networks:
+      - audit_network
+    command: python worker_server/main.py
+
+  # 워커 서버 10
+  worker-10:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: audit_worker_10
+    environment:
+      DATABASE_URL: postgresql://audit_user:audit_pass@postgres:5432/audit_db
+      CENTRAL_SERVER_URL: http://central-server:8000
+      WORKER_ID: worker-010
+    ports:
+      - "8010:8001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      central-server:
+        condition: service_started
+    volumes:
+      - ./worker_server:/app/worker_server
+      - ./db_models:/app/db_models
+    networks:
+      - audit_network
+    command: python worker_server/main.py
+
+volumes:
+  postgres_data:
+
+networks:
+  audit_network:
+    driver: bridge
