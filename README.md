@@ -1,336 +1,77 @@
-# 감사보고서 분산 수집 시스템
+<p align="center">
+  <img src="docs/img/hero.png" alt="감사보고서 분산 수집 시스템" width="100%">
+</p>
 
-분산 처리를 통해 DART 감사보고서를 효율적으로 수집하는 시스템입니다.
+<h3 align="center">DART 외부감사보고서를 워커 여러 대로 나눠 받고, 실패한 작업만 다시 도는 수집 시스템</h3>
 
-## 아키텍처
+<p align="center">
+  <a href="#볼-만한-코드">볼 만한 코드</a> ·
+  <a href="#실행">실행</a> ·
+  <a href="GCP_TERRAFORM.md">GCP 배포</a> ·
+  <a href="ARCHITECTURE.md">구조 문서</a>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Python-3776AB?logo=python&logoColor=white" alt="Python">
+  <img src="https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white" alt="FastAPI">
+  <img src="https://img.shields.io/badge/PostgreSQL-4169E1?logo=postgresql&logoColor=white" alt="PostgreSQL">
+  <img src="https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=white" alt="Docker">
+  <img src="https://img.shields.io/badge/GCP%20Compute%20Engine-4285F4?logo=googlecloud&logoColor=white" alt="GCP">
+  <img src="https://img.shields.io/badge/Terraform-844FBA?logo=terraform&logoColor=white" alt="Terraform">
+  <img src="https://img.shields.io/badge/%EC%99%B8%EC%A3%BC%20%C2%B7%20%EB%8B%A8%EB%8F%85%20%EA%B0%9C%EB%B0%9C-F5B942" alt="외주 · 단독 개발">
+</p>
+
+## 무엇을 하나
+
+회계법인이 업무를 대행하는 기업 목록(엑셀)을 받아, 기업마다 DART 에 올라온 외부감사보고서가 갱신됐는지
+확인하고 그 결과를 엑셀에 다시 채워 넣습니다. 기업이 수천 곳이라 한 대로 돌리면 기한을 못 맞춰, 중앙 서버
+한 대가 페이지 범위를 나눠 주고 워커 여러 대가 동시에 받습니다. 어느 워커가 중간에 죽어도 그 작업만
+다른 워커가 이어받습니다.
+
+**외주 · 단독 개발**
+
+## 흐름
 
 ```
-┌─────────────────────────────────────────────────────┐
-│         중앙 서버 (Central Server)                  │
-│  - 총 페이지 수 확인                                │
-│  - 작업 분배 (페이지 범위 할당)                     │
-│  - 진행 상황 모니터링                               │
-│  - 최종 매칭 (엑셀)                                 │
-└────────────────────┬────────────────────────────────┘
-                     │
-        ┌────────────┼────────────┐
-        │            │            │
-    ┌───▼──┐    ┌───▼──┐    ┌───▼──┐
-    │Worker│    │Worker│ ...│Worker│ (10개)
-    │  1   │    │  2   │    │  10  │
-    └───┬──┘    └───┬──┘    └───┬──┘
-        │            │            │
-        └────────────┼────────────┘
-                     │
-           ┌─────────▼──────────┐
-           │  PostgreSQL DB    │
-           │  - 작업 관리      │
-           │  - 수집된 데이터  │
-           │  - 에러 로그      │
-           └───────────────────┘
+중앙 서버  /init      DART 전체 페이지 수 확인 → 워커 수만큼 페이지 범위로 나눠 DB 에 작업 등록
+워커 N     /work      대기 작업 하나 받기 → 페이지 수집 → 대표자명 조회 → DB 저장 → 완료 보고
+중앙 서버  /status    완료 · 실패 · 진행 중 작업 수
+중앙 서버  /finalize  DB 의 수집 결과를 엑셀과 매칭(공시회사명 + 대표자명) → 엑셀 저장
 ```
 
-## 주요 특징
+## 구성
 
-✅ **분산 처리**: 10개의 워커가 동시에 페이지 수집  
-✅ **신뢰성**: 에러 발생해도 계속 진행, DB에 정확히 기록  
-✅ **재귀성**: 실패한 작업만 재시도 가능  
-✅ **모니터링**: 실시간 진행 상황 확인  
+| 역할 | 스택 | 맡는 일 |
+|---|---|---|
+| central_server | FastAPI | 페이지 범위 분배, 진행 감시, 최종 엑셀 매칭 |
+| worker_server | FastAPI · requests · BeautifulSoup | 할당받은 페이지 수집, 실패 보고 |
+| db_models | SQLAlchemy · PostgreSQL | 작업 상태 · 수집 결과 · 오류 기록 |
+| 배포 | Docker Compose(로컬) · GCP Compute Engine + Terraform(운영) | 중앙 1대 + 워커 10대를 한 번에 세움 |
 
-## 시작하기
+## 볼 만한 코드
 
-### 1. 환경 설정
+- **브라우저 없이 요청을 직접 부른다** — 처음엔 Selenium 으로 화면을 조작했는데 건마다 대기가 붙어
+  느렸습니다. 화면이 보내던 요청을 `requests` 로 직접 부르고 `BeautifulSoup` 으로 읽어 실행 시간을 줄였습니다.
+  → [`worker_server/main.py`](worker_server/main.py)
+- **실패한 작업만 다시 돈다** — 작업 단위가 페이지 범위라, 실패는 그 범위만 `FAILED` 로 남고 재할당됩니다.
+  워커가 죽으면 `IN_PROGRESS` 로 남은 작업을 다른 워커가 이어받습니다. 전체를 처음부터 다시 돌리지 않습니다.
+  → [`central_server/main.py`](central_server/main.py)
+- **몇 대까지 늘릴지** — 워커를 늘릴수록 비용은 곧게 오르는데 처리 이득은 완만해져, 요청당 비용이 이득을
+  넘는 지점이 생겼습니다. 거기서 대수를 멈추고 단위 비용을 줄이는 쪽으로 바꿨습니다.
+  → [`GCP_TERRAFORM.md`](GCP_TERRAFORM.md)
+
+## 실행
 
 ```bash
-cd distributed
-cp .env.example .env
-```
-
-### 2. Docker 스택 시작
-
-```bash
+cp .env.example .env      # DATABASE_URL · DART 기간 · 워커 수
 docker-compose up -d
+curl http://localhost:8000/init      # 작업 분배
+curl http://localhost:8000/status    # 진행 확인
+curl -X POST http://localhost:8000/finalize   # 엑셀 매칭
 ```
 
-**확인:**
-- 중앙 서버: http://localhost:8000
-- 워커 1: http://localhost:8001
-- DB: localhost:5432
+중앙 서버 http://localhost:8000 · 워커 http://localhost:8001 ~ 8010 · DB localhost:5432
 
-### 3. 초기화 및 작업 시작
+## 만든 사람
 
-```bash
-# 1️⃣ 초기화 (총 페이지 수 확인 + 작업 분배)
-curl -X GET http://localhost:8000/init
-
-# 2️⃣ 진행 상황 확인
-curl -X GET http://localhost:8000/status
-
-# 3️⃣ 워커에서 작업 수행
-# 각 워커가 자동으로 work endpoint 호출
-
-# 4️⃣ 모든 작업 완료 후 최종 매칭
-curl -X POST http://localhost:8000/finalize
-```
-
-## API 엔드포인트
-
-### 중앙 서버 (포트 8000)
-
-| 메서드 | 엔드포인트 | 설명 |
-|--------|-----------|------|
-| GET | `/init` | 초기화: 페이지 수 확인 + 작업 분배 |
-| GET | `/status` | 전체 진행 상황 조회 |
-| GET | `/tasks/pending` | 대기 중인 작업 목록 |
-| POST | `/tasks/{id}/assign/{worker}` | 작업 할당 |
-| POST | `/tasks/{id}/complete` | 작업 완료 보고 |
-| POST | `/tasks/{id}/fail` | 작업 실패 보고 |
-| POST | `/finalize` | 최종화 (엑셀 매칭) |
-| GET | `/health` | 헬스 체크 |
-
-### 워커 서버 (포트 8001-8010)
-
-| 메서드 | 엔드포인트 | 설명 |
-|--------|-----------|------|
-| GET | `/work` | 작업 가져오기 + 수행 + 완료 보고 |
-| GET | `/status` | 워커 상태 |
-| GET | `/health` | 헬스 체크 |
-
-## 단계별 실행 흐름
-
-### ✨ Step 1: 초기화
-
-```bash
-curl -X GET http://localhost:8000/init
-```
-
-**응답:**
-```json
-{
-  "status": "success",
-  "total_pages": 50,
-  "num_workers": 10,
-  "timestamp": "2024-01-01T12:00:00"
-}
-```
-
-**내부 동작:**
-- DART API에서 총 페이지 수 조회
-- 50페이지 ÷ 10 워커 = 각 워커 5페이지씩
-- DB에 작업 분배: Task 1 (1-5페이지), Task 2 (6-10페이지), ...
-
-### ✨ Step 2: 진행 상황 확인
-
-```bash
-curl -X GET http://localhost:8000/status
-```
-
-**응답:**
-```json
-{
-  "total_pages": 50,
-  "total_tasks": 10,
-  "completed_tasks": 2,
-  "failed_tasks": 0,
-  "in_progress_tasks": 3,
-  "pending_tasks": 5,
-  "is_initialized": true
-}
-```
-
-### ✨ Step 3: 워커 작업 수행
-
-각 워커는 자유도 있게 주기적으로 `/work` 엔드포인트 호출:
-
-```python
-# 워커에서 (자동 또는 스크립트)
-while True:
-    response = requests.get(f"{CENTRAL_SERVER_URL}/work")
-    if response.json()["status"] == "no_work":
-        break
-    time.sleep(300)  # 5분마다 확인
-```
-
-**워커 동작:**
-1. 대기 중인 작업 조회 (페이지 범위 할당)
-2. 할당받은 페이지 수집
-3. CEO 정보 조회
-4. DB에 저장
-5. 중앙 서버에 완료 보고
-
-### ✨ Step 4: 최종 매칭
-
-```bash
-curl -X POST http://localhost:8000/finalize
-```
-
-**동작:**
-- DB의 모든 수집 데이터 조회
-- 기존 엑셀과 매칭 (공시회사명 + 대표자명)
-- 엑셀에 감사보고서 정보 입력
-- 엑셀 저장
-
-## 에러 처리
-
-### 🔴 사례 1: 대표자명 조회 실패
-
-```
-상황: 워커가 CEO 정보를 못 찾음
-결과: ceo_name = None으로 DB 저장
-영향: 엑셀 매칭에서 이 항목은 매칭되지 않음
-```
-
-### 🔴 사례 2: 페이지 수집 실패
-
-```
-상황: DART 서버 에러로 페이지 수집 실패
-결과: 해당 워커 작업은 FAILED, 로그에 기록
-영향: 재시도 가능 (작업 재할당)
-```
-
-### 🔴 사례 3: 워커 중단
-
-```
-상황: 워커 컨테이너 중지
-결과: 작업은 IN_PROGRESS 상태로 남음
-해결: 다른 워커가 같은 작업 재수행 (보고 전)
-```
-
-## 로그 확인
-
-```bash
-# 중앙 서버 로그
-docker logs audit_central
-
-# 워커 로그
-docker logs audit_worker_1
-docker logs audit_worker_2
-
-# 데이터베이스 상태 확인
-docker exec audit_db psql -U audit_user -d audit_db -c \
-  "SELECT id, page_start, page_end, status, worker_id FROM audit_tasks;"
-```
-
-## 데이터베이스 스키마
-
-### audit_tasks (작업 관리)
-```sql
-id              | 작업 ID
-page_start      | 시작 페이지
-page_end        | 종료 페이지
-worker_id       | 할당된 워커
-status          | pending/assigned/in_progress/completed/failed
-created_at      | 생성 시간
-completed_at    | 완료 시간
-```
-
-### audit_reports (수집 데이터)
-```sql
-id              | 감사보고서 ID
-task_id         | 작업 ID (외래키)
-company_name    | 공시회사명
-cik_code        | CIK 코드
-ceo_name        | 대표자명
-report_text     | 감사보고서 내용
-submitter       | 제출인
-```
-
-### task_logs (에러 추적)
-```sql
-id              | 로그 ID
-task_id         | 작업 ID
-worker_id       | 워커 ID
-log_type        | ERROR/WARNING/INFO
-message         | 로그 메시지
-page_number     | 해당 페이지
-```
-
-## 성능 최적화 팁
-
-### 1️⃣ 워커 수조정
-
-```yaml
-# docker-compose.yml
-# worker-11, worker-12 추가로 성능 향상
-```
-
-### 2️⃣ 타임아웃 조정
-
-```python
-# worker_server/main.py
-timeout=30  # → 60으로 증가 (느린 네트워크)
-```
-
-### 3️⃣ 재시도 로직
-
-```python
-# worker_server/main.py
-MAX_RETRIES = 3  # → 5로 증가 (불안정한 네트워크)
-```
-
-## 문제 해결
-
-### ❌ 연결 실패: Connection refused
-
-**원인:** 컨테이너 미시작 또는 DB 준비 미완료
-
-```bash
-# 1. 컨테이너 상태 확인
-docker-compose ps
-
-# 2. DB 헬스 확인
-docker exec audit_db pg_isready -U audit_user
-
-# 3. 재시작
-docker-compose restart
-```
-
-### ❌ 워커가 작업을 못 찾음
-
-**원인:** 초기화가 안 됨 또는 모든 작업 완료
-
-```bash
-# 초기화 확인
-curl -X GET http://localhost:8000/status
-
-# 필요시 재초기화 (DB 초기화 필수)
-# docker-compose down -v
-# docker-compose up -d
-```
-
-### ❌ 엑셀 매칭 실패 (재실행 필요)
-
-```bash
-# 1. 매칭 함수 구현 (최종 단계)
-# 2. finalize endpoint 재호출
-```
-
-## 다음 단계
-
-### 📝 TODO
-
-1. **엑셀 매칭 로직 구현**
-   - [x] DB 설계
-   - [x] 중앙/워커 서버
-   - [ ] 최종 매칭 함수 (finalize endpoint)
-
-2. **모니터링 대시보드** (선택)
-   - Grafana + Prometheus
-   - Real-time 진행률 표시
-
-3. **자동 재시도**
-   - 실패한 작업 자동 재할당
-
-4. **스케줄링**
-   - APScheduler로 주기적 실행
-
-## 라이선스
-
-MIT
-
-## 지원
-
-문제 발생 시 로그를 확인하세요:
-```bash
-docker-compose logs -f
-```
+**이승욱** · coms1768@gmail.com · 요구사항 정리부터 개발 · 배포 · 납품까지 단독
